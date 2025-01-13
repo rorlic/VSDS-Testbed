@@ -1,4 +1,4 @@
-version: "2.1"
+# version: "2.1"
 
 # These volumes record all persistent data for the Test Bed instance.
 volumes:
@@ -11,7 +11,7 @@ services:
   #
   gitb-redis:
     # Internal component used to store users' UI sessions.
-    image: redis:7.2.5
+    image: redis:7.4.2
     restart: unless-stopped
   gitb-mysql:
     # The Test Bed's DB.
@@ -32,7 +32,7 @@ services:
     #   - "3307:3306"
   gitb-srv:
     # The test engine that executed the test sessions.
-    image: isaitb/gitb-srv
+    image: isaitb/gitb-srv:latest
     restart: unless-stopped
     environment:
       # This is used to define how external services (the test-services component) will make callbacks on the
@@ -48,7 +48,7 @@ services:
     #   - "10001:8080"
   gitb-ui:
     # The Test Bed's UI.
-    image: isaitb/gitb-ui
+    image: isaitb/gitb-ui:latest
     restart: unless-stopped
     # This is the only Test Bed component for which we currently add a host port mapping. If port 9000 on your
     # host is taken just replace "9000:9000" with say "9001:9000".
@@ -59,16 +59,15 @@ services:
       - DATA_ARCHIVE_KEY=12345
       # Flag to enable the Test Bed's REST API. This can be very useful for efficient test case development.
       - AUTOMATION_API_ENABLED=true
-      - AUTHENTICATION_COOKIE_PATH=/vsds-testbed
-      - TESTBED_MODE=production
-      - TESTBED_HOME_LINK=https://data.dev-vlaanderen.be/vsds-testbed
+      - AUTHENTICATION_COOKIE_PATH=${AUTHENTICATION_COOKIE_PATH:-/vsds-testbed}
+      - TESTBED_MODE=${TESTBED_MODE:-production}
+      - TESTBED_HOME_LINK=${TESTBED_HOME_LINK:-https://data.dev-vlaanderen.be/vsds-testbed}
       - HMAC_KEY=${HMAC_KEY}
       - APPLICATION_SECRET=${APPLICATION_SECRET}
       - MASTER_PASSWORD=${MASTER_PASSWORD}
       - DB_DEFAULT_PASSWORD=${MYSQL_PASSWORD}
       # Disable this if you don't want to overrule the existing password:https://www.itb.ec.europa.eu/docs/guides/latest/installingTheTestBedProduction/index.html#updating-configuration-during-operation
-      - MASTER_PASSWORD_FORCE=true
-
+      - MASTER_PASSWORD_FORCE=${MASTER_PASSWORD_FORCE:-true}
     volumes:
       - gitb-repo:/gitb-repository
       # This points to the folder from which the initialisation data archive specific to the PoC will be loaded from.
@@ -80,7 +79,6 @@ services:
         condition: service_healthy
       gitb-srv:
         condition: service_started
-
   # Replace blue with yellow :)
   #  gitb-ui-proxy:
   #    build: proxy
@@ -120,21 +118,79 @@ services:
   #
   # These are added here for the PoC's installation convenience to act as a SUT. Eventually these would be removed from this docker-compose file.
   # When removing them remember to adapt the systems' configuration in the Test Bed UI to point to the new address of ldes-server.
-  ldes-server:
-    image: ldes/ldes-server:2.0.2-SNAPSHOT
-    # ports:
-    #       - 8080:8080
-    environment:
-      - SPRING_CONFIG_LOCATION=/config/
-    volumes:
-      - ./config/ldes-server/ldes-server.yml:/config/application.yml:ro
-    depends_on:
-      - ldes-mongodb
-  ldes-mongodb:
-    image: mongo:latest
-    # ports:
-    #       - 27017:27017
+  # ldes-server:
+  #   image: ldes/ldes-server:2.15.0-SNAPSHOT
+  #   ports:
+  #     - 8080:8080
+  #   environment:
+  #     - SPRING_CONFIG_LOCATION=/config/
+  #   volumes:
+  #     - ./config/ldes-server/ldes-server.yml:/config/application.yml:ro
+  #   depends_on:
+  #     - ldes-mongodb
+  # ldes-mongodb:
+  #   image: mongo:latest
+  #   ports:
+  #     - 27017:27017
 
+  # LDES Server
+  ldes-server:
+    image: ldes/ldes-server:${LDES_SERVER_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - SPRING_TASK_SCHEDULING_POOL_SIZE=5
+      - LDESSERVER_FRAGMENTATIONCRON=* * * * * * # every second
+      - SIS_DATA=/tmp
+      - SERVER_PORT=8080
+      - SERVER_SERVLET_CONTEXTPATH=
+      - LDESSERVER_HOSTNAME=http://ldes-server:8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PWD}
+      - SPRING_BATCH_JDBC_INITIALIZESCHEMA=always
+      - LDESSERVER_MAINTENANCECRON=-
+      - MANAGEMENT_TRACING_ENABLED=false
+      - MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,prometheus
+      - MANAGEMENT_ENDPOINT_HEALTH_SHOWDETAILS=always
+    volumes:
+      - ./config/ldes-server/ldes-server.yml:/application.yml:ro
+    ports:
+      - 8080:8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://ldes-server:8080/actuator/health"]
+      interval: 12s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Postgres Database
+  postgres:
+    image: postgres:${POSTGRES_TAG:-latest}
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PWD}
+    shm_size: 128mb
+    # expose:
+    #   - 5432
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+      interval: 10s
+      retries: 15
+      start_period: 30s
+      timeout: 10s
+    restart: unless-stopped
+
+  # Postgres Database UI
+  adminer:
+    image: adminer:${ADMINER_TAG:-latest}
+    depends_on:
+      - postgres
+    ports:
+      - 8085:8080
+    restart: unless-stopped
   #
   # PoC specific containers for the LDES server - END
   #

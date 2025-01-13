@@ -1,16 +1,22 @@
-mongock:
-    migration-scan-package: VSDS
 springdoc:
-    swagger-ui:
-        path: /v1/swagger
+  swagger-ui:
+    path: /v1/swagger
+    urlsPrimaryName: base
+
+logging:
+  level:
+    root: WARN
+    be.vlaanderen.informatievlaanderen.ldes.ldio.Application: INFO
+
+# use prefixes for turtle
 ldes-server:
-    host-name: "http://ldes-server:8080"
-management:
-    tracing:
-        enabled: false
-spring:
-  data:
-    mongodb:
-        database: ldes
-        host: ldes-mongodb
-        port: 27017
+  formatting:
+    prefixes:
+      geo:             http://www.opengis.net/ont/geosparql#
+      kbo:             https://kbopub.economie.fgov.be/kbo#
+      legal:           http://www.w3.org/ns/legal#
+      locn:            https://www.w3.org/ns/locn#
+      org:             http://www.w3.org/ns/org#
+      terms:           http://purl.org/dc/terms/
+      vcard:           http://www.w3.org/2006/vcard/
+      xsd:             http://www.w3.org/2001/XMLSchema#
